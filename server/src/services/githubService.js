@@ -1,0 +1,326 @@
+import { prisma } from "../lib/prisma.js";
+import { ProjectRepository } from "../repositories/projectRepository.js";
+import { FileRepository } from "../repositories/fileRepository.js";
+import { AppError } from "../utils/appError.js";
+import { log } from "../helpers/logger.js";
+import crypto from "crypto";
+import path from "path";
+import os from "os";
+import fs from "fs/promises";
+import { exec } from "child_process";
+
+const projectRepository = new ProjectRepository();
+const fileRepository = new FileRepository();
+
+function execPromise(cmd, options = {}) {
+  return new Promise((resolve, reject) => {
+    exec(cmd, { maxBuffer: 10 * 1024 * 1024, ...options }, (err, stdout, stderr) => {
+      if (err) reject(new Error(stderr || stdout || err.message));
+      else resolve(stdout);
+    });
+  });
+}
+
+function parseGithubUrl(url) {
+  const trimmed = url.replace(/\.git$/, "").trim();
+  let match = trimmed.match(/github\.com[:/]([^/]+)\/([^/]+)/);
+  if (!match) {
+    match = trimmed.match(/^([^/]+)\/([^/]+)$/);
+  }
+  if (!match) {
+    throw AppError.badRequest("Invalid GitHub repository URL");
+  }
+  return { owner: match[1], repo: match[2].replace(/\.git$/, "") };
+}
+
+function splitExtension(filename) {
+  const dot = filename.lastIndexOf(".");
+  if (dot <= 0) return { name: filename, ext: "" };
+  return { name: filename.slice(0, dot), ext: filename.slice(dot + 1) };
+}
+
+export class GithubService {
+  async importRepository(userId, { repoUrl, githubAccessToken, branch }) {
+    const parsed = parseGithubUrl(repoUrl);
+    const repoFullName = `${parsed.owner}/${parsed.repo}`;
+    const projectName = parsed.repo;
+
+    const cloneUrl = githubAccessToken
+      ? `https://x-access-token:${githubAccessToken}@github.com/${repoFullName}.git`
+      : `https://github.com/${repoFullName}.git`;
+
+    const tempDir = path.join(
+      os.tmpdir(),
+      `nexide-import-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`
+    );
+
+    try {
+      await fs.mkdir(tempDir, { recursive: true });
+      log.info("Cloning repository", { repoFullName, tempDir });
+
+      let cloneCmd = `git clone --depth 1 ${cloneUrl} "${tempDir}"`;
+      if (branch) {
+        cloneCmd = `git clone --depth 1 --branch ${branch} ${cloneUrl} "${tempDir}"`;
+      }
+
+      try {
+        await execPromise(cloneCmd, { timeout: 120000 });
+      } catch (cloneErr) {
+        const msg = cloneErr.message || "";
+        if (msg.includes("Repository not found") || msg.includes("not found")) {
+          throw AppError.notFound("GitHub repository not found. Check the URL or provide a valid access token.");
+        }
+        if (msg.includes("Authentication failed") || msg.includes("access token")) {
+          throw AppError.unauthorized("GitHub authentication failed. The access token may be invalid or lacks permissions.");
+        }
+        throw AppError.badRequest(`Failed to clone repository: ${msg.slice(0, 500)}`);
+      }
+
+      const project = await projectRepository.create({
+        name: projectName,
+        slug: `${projectName.toLowerCase().replace(/[^a-z0-9-]/g, "-")}-${Date.now()}`,
+        description: `Imported from GitHub: ${repoUrl}`,
+        language: "javascript",
+        ownerId: userId,
+      });
+
+      await prisma.workspace.create({
+        data: { projectId: project.id, name: projectName },
+      });
+
+      await prisma.projectMember.create({
+        data: { projectId: project.id, userId, role: "OWNER" },
+      });
+
+      const stats = await this._importDirectory(project.id, tempDir, null);
+
+      const webhookSecret = crypto.randomBytes(20).toString("hex");
+
+      await prisma.githubRepo.create({
+        data: {
+          projectId: project.id,
+          userId,
+          repoUrl,
+          repoFullName,
+          defaultBranch: branch || "main",
+          webhookSecret,
+          lastSyncedAt: new Date(),
+        },
+      });
+
+      log.info("Repository imported", { projectId: project.id, repoFullName, ...stats });
+
+      return {
+        project: await projectRepository.findById(project.id),
+        stats,
+        webhookSecret,
+        webhookUrl: `/api/v1/github/webhook`,
+      };
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+    }
+  }
+
+  async _importDirectory(projectId, dirPath, parentFolderId) {
+    let foldersCreated = 0;
+    let filesCreated = 0;
+
+    const entries = await fs.readdir(dirPath, { withFileTypes: true });
+
+    for (const entry of entries) {
+      if (entry.name.startsWith(".")) continue;
+      if (entry.name === "node_modules") continue;
+
+      const fullPath = path.join(dirPath, entry.name);
+
+      if (entry.isDirectory()) {
+        let parentPath = "";
+        if (parentFolderId) {
+          const parent = await fileRepository.findFolderById(parentFolderId);
+          if (parent) parentPath = parent.path;
+        }
+        const folderPath = parentPath ? `${parentPath}/${entry.name}` : entry.name;
+
+        const folder = await fileRepository.createFolder({
+          name: entry.name,
+          path: folderPath,
+          projectId,
+          parentId: parentFolderId || null,
+        });
+
+        foldersCreated++;
+
+        const subStats = await this._importDirectory(projectId, fullPath, folder.id);
+        foldersCreated += subStats.foldersCreated;
+        filesCreated += subStats.filesCreated;
+      } else if (entry.isFile()) {
+        const content = await fs.readFile(fullPath, "utf-8").catch(() => null);
+        const contentStr = content || "";
+
+        let parentPath = "";
+        if (parentFolderId) {
+          const parent = await fileRepository.findFolderById(parentFolderId);
+          if (parent) parentPath = parent.path;
+        }
+        const filePath = parentPath ? `${parentPath}/${entry.name}` : entry.name;
+        const { ext } = splitExtension(entry.name);
+
+        try {
+          await fileRepository.createFile({
+            name: entry.name,
+            extension: ext,
+            path: filePath,
+            content: contentStr,
+            size: Buffer.byteLength(contentStr, "utf-8"),
+            projectId,
+            folderId: parentFolderId || null,
+          });
+          filesCreated++;
+        } catch (err) {
+          if (err.code === "P2002") {
+            log.warn("Skipping duplicate file", { path: filePath, projectId });
+          } else {
+            throw err;
+          }
+        }
+      }
+    }
+
+    return { foldersCreated, filesCreated };
+  }
+
+  async syncRepository(userId, projectId) {
+    const githubRepo = await prisma.githubRepo.findUnique({
+      where: { projectId },
+    });
+
+    if (!githubRepo || githubRepo.userId !== userId) {
+      throw AppError.notFound("GitHub repository link not found for this project");
+    }
+
+    const tempDir = path.join(
+      os.tmpdir(),
+      `nexide-sync-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`
+    );
+
+    try {
+      const cloneUrl = `https://github.com/${githubRepo.repoFullName}.git`;
+
+      await fs.mkdir(tempDir, { recursive: true });
+      await execPromise(`git clone --depth 1 ${cloneUrl} "${tempDir}"`, { timeout: 120000 });
+
+      await prisma.file.deleteMany({ where: { projectId } });
+
+      const folderIds = await prisma.folder.findMany({
+        where: { projectId },
+        select: { id: true },
+        orderBy: { path: "desc" },
+      });
+      for (const f of folderIds) {
+        await prisma.folder.delete({ where: { id: f.id } }).catch(() => {});
+      }
+
+      const stats = await this._importDirectory(projectId, tempDir, null);
+
+      await prisma.githubRepo.update({
+        where: { projectId },
+        data: { lastSyncedAt: new Date() },
+      });
+
+      log.info("Repository synced", { projectId, ...stats });
+      return { stats };
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+    }
+  }
+
+  async getLinkedRepo(projectId, userId) {
+    const githubRepo = await prisma.githubRepo.findUnique({
+      where: { projectId },
+    });
+
+    if (!githubRepo) return null;
+    if (githubRepo.userId !== userId) {
+      throw AppError.forbidden("You do not have access to this repository link");
+    }
+
+    return {
+      ...githubRepo,
+      webhookUrl: `/api/v1/github/webhook`,
+    };
+  }
+
+  async regenerateWebhookSecret(projectId, userId) {
+    const githubRepo = await prisma.githubRepo.findUnique({
+      where: { projectId },
+    });
+
+    if (!githubRepo) {
+      throw AppError.notFound("No GitHub repository linked to this project");
+    }
+    if (githubRepo.userId !== userId) {
+      throw AppError.forbidden("Only the user who imported the repo can regenerate the webhook secret");
+    }
+
+    const webhookSecret = crypto.randomBytes(20).toString("hex");
+
+    await prisma.githubRepo.update({
+      where: { projectId },
+      data: { webhookSecret },
+    });
+
+    log.info("Webhook secret regenerated", { projectId });
+
+    return { webhookSecret, webhookUrl: `/api/v1/github/webhook` };
+  }
+
+  async unlinkRepo(projectId, userId) {
+    const githubRepo = await prisma.githubRepo.findUnique({
+      where: { projectId },
+    });
+
+    if (!githubRepo) {
+      throw AppError.notFound("No GitHub repository linked to this project");
+    }
+    if (githubRepo.userId !== userId) {
+      throw AppError.forbidden("Only the user who imported the repo can unlink it");
+    }
+
+    await prisma.githubRepo.delete({ where: { projectId } });
+
+    log.info("Repository unlinked", { projectId });
+
+    return { unlinked: true };
+  }
+
+  async listUserRepos(githubAccessToken) {
+    if (!githubAccessToken) {
+      throw AppError.badRequest("GitHub access token is required");
+    }
+
+    const res = await fetch("https://api.github.com/user/repos?per_page=100&sort=updated", {
+      headers: {
+        Authorization: `Bearer ${githubAccessToken}`,
+        Accept: "application/vnd.github.v3+json",
+      },
+    });
+
+    if (!res.ok) {
+      throw AppError.unauthorized("Failed to fetch repositories from GitHub");
+    }
+
+    const repos = await res.json();
+    return repos.map((repo) => ({
+      id: repo.id,
+      name: repo.name,
+      fullName: repo.full_name,
+      description: repo.description,
+      url: repo.html_url,
+      cloneUrl: repo.clone_url,
+      private: repo.private,
+      language: repo.language,
+      defaultBranch: repo.default_branch,
+      updatedAt: repo.updated_at,
+    }));
+  }
+}

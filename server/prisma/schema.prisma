@@ -1,6 +1,5 @@
 generator client {
   provider        = "prisma-client-js"
-  previewFeatures = []
 }
 
 datasource db {
@@ -8,6 +7,366 @@ datasource db {
   url       = env("DATABASE_URL")
 }
 
-model Placeholder {
-  id String @id @default(cuid())
+enum Provider {
+  LOCAL
+  GOOGLE
+  GITHUB
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  EDITOR
+  VIEWER
+}
+
+enum ProjectStatus {
+  ACTIVE
+  ARCHIVED
+  DELETED
+}
+
+enum ProjectVisibility {
+  PRIVATE
+  PUBLIC
+  UNLISTED
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  EXPIRED
+}
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  fullName     String   @map("full_name")
+  username     String   @unique
+  email        String   @unique
+  password     String?
+  bio          String?  @db.VarChar(500)
+  avatar       String?
+  provider     Provider @default(LOCAL)
+  providerId   String?  @map("provider_id")
+  role         Role     @default(EDITOR)
+  isVerified   Boolean  @default(false) @map("is_verified")
+  refreshToken String?  @map("refresh_token")
+  lastLoginAt  DateTime? @map("last_login_at")
+  deletedAt    DateTime? @map("deleted_at")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  preferences       UserPreference?
+  projects          Project[]
+  favorites         UserFavorite[]
+  projectMemberships ProjectMember[]
+  sentInvitations   Invitation[]      @relation("SentInvitations")
+  receivedInvitations Invitation[]   @relation("ReceivedInvitations")
+  chatMessages      ChatMessage[]
+  notifications     Notification[]    @relation("UserNotifications")
+  actedNotifications Notification[]  @relation("NotificationActor")
+  aiConversations AiConversation[]
+  githubRepos     GithubRepo[]
+
+  @@index([email])
+  @@index([username])
+  @@index([provider, providerId])
+  @@map("users")
+}
+
+model UserPreference {
+  id              String @id @default(uuid()) @db.Uuid
+  userId          String @unique @map("user_id") @db.Uuid
+  theme           String @default("dark")
+  language        String @default("en")
+  timezone        String @default("UTC")
+  editorFontSize  Int    @default(14) @map("editor_font_size")
+  editorTabSize   Int    @default(2) @map("editor_tab_size")
+  editorWordWrap  Boolean @default(false) @map("editor_word_wrap")
+  editorMinimap   Boolean @default(true) @map("editor_minimap")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_preferences")
+}
+
+model Project {
+  id           String             @id @default(uuid()) @db.Uuid
+  name         String
+  slug         String
+  description  String?            @db.VarChar(1000)
+  icon         String?
+  color        String?            @db.VarChar(7)
+  language     String?            @default("javascript")
+  framework    String?
+  visibility   ProjectVisibility  @default(PRIVATE)
+  status       ProjectStatus      @default(ACTIVE)
+  ownerId      String             @map("owner_id") @db.Uuid
+  lastOpenedAt DateTime?          @map("last_opened_at")
+  deletedAt    DateTime?          @map("deleted_at")
+  createdAt    DateTime           @default(now()) @map("created_at")
+  updatedAt    DateTime           @updatedAt @map("updated_at")
+
+  owner     User            @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  favorites UserFavorite[]
+  workspace Workspace?
+  members   ProjectMember[]
+  invitations Invitation[]
+  folders   Folder[]
+  files     File[]
+  chatMessages  ChatMessage[]
+  notifications Notification[]
+  containers    Container[]
+  aiConversations AiConversation[]
+  githubRepo      GithubRepo?
+
+  @@unique([ownerId, slug])
+  @@index([ownerId])
+  @@index([ownerId, status])
+  @@index([slug])
+  @@index([language])
+  @@index([status])
+  @@map("projects")
+}
+
+model Workspace {
+  id        String   @id @default(uuid()) @db.Uuid
+  projectId String   @unique @map("project_id") @db.Uuid
+  name      String
+  status    String   @default("active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("workspaces")
+}
+
+model ProjectMember {
+  id        String   @id @default(uuid()) @db.Uuid
+  projectId String   @map("project_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  role      Role     @default(EDITOR)
+  joinedAt  DateTime @default(now()) @map("joined_at")
+  invitedBy String?  @map("invited_by") @db.Uuid
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+  @@index([projectId])
+  @@index([userId])
+  @@map("project_members")
+}
+
+model Invitation {
+  id        String           @id @default(uuid()) @db.Uuid
+  projectId String           @map("project_id") @db.Uuid
+  email     String
+  role      Role             @default(EDITOR)
+  token     String           @unique
+  status    InvitationStatus @default(PENDING)
+  invitedBy String?          @map("invited_by") @db.Uuid
+  acceptedBy String?         @map("accepted_by") @db.Uuid
+  expiresAt DateTime         @map("expires_at")
+  createdAt DateTime         @default(now()) @map("created_at")
+  updatedAt DateTime         @updatedAt @map("updated_at")
+
+  project       Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  inviter       User?   @relation("SentInvitations", fields: [invitedBy], references: [id])
+  acceptedByUser User?  @relation("ReceivedInvitations", fields: [acceptedBy], references: [id])
+
+  @@index([projectId])
+  @@index([email])
+  @@index([token])
+  @@index([status])
+  @@map("invitations")
+}
+
+model Folder {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  path      String
+  projectId String   @map("project_id") @db.Uuid
+  parentId  String?  @map("parent_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  project  Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  parent   Folder?  @relation("FolderTree", fields: [parentId], references: [id])
+  children Folder[] @relation("FolderTree")
+  files    File[]
+
+  @@unique([projectId, path])
+  @@index([projectId])
+  @@index([projectId, parentId])
+  @@map("folders")
+}
+
+model File {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  extension String   @default("")
+  path      String
+  content   String?  @db.Text
+  size      Int      @default(0)
+  mimeType  String?  @map("mime_type")
+  encoding  String   @default("utf-8")
+  projectId String   @map("project_id") @db.Uuid
+  folderId  String?  @map("folder_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  folder  Folder? @relation(fields: [folderId], references: [id])
+
+  @@unique([projectId, path])
+  @@index([projectId])
+  @@index([projectId, folderId])
+  @@map("files")
+}
+
+model AiConversation {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  projectId String?  @map("project_id") @db.Uuid
+  title     String   @default("New conversation")
+  model     String   @default("gpt-4o-mini")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user     User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project  Project?   @relation(fields: [projectId], references: [id])
+  messages AiMessage[]
+
+  @@index([userId])
+  @@index([projectId])
+  @@map("ai_conversations")
+}
+
+model AiMessage {
+  id             String   @id @default(uuid()) @db.Uuid
+  conversationId String   @map("conversation_id") @db.Uuid
+  role           String
+  content        String   @db.Text
+  tokens         Int?     @default(0)
+  metadata       Json?    @db.JsonB
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  conversation AiConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
+  @@map("ai_messages")
+}
+
+model Container {
+  id            String   @id @default(uuid()) @db.Uuid
+  projectId     String   @map("project_id") @db.Uuid
+  image         String   @default("node:18-alpine")
+  name          String?
+  status        String   @default("CREATED")
+  dockerId      String?  @unique @map("docker_id")
+  assignedPort  Int?     @map("assigned_port")
+  containerPort Int?     @default(3000) @map("container_port")
+  cpuLimit      String?  @map("cpu_limit")
+  memoryLimit   String?  @map("memory_limit")
+  envVars       Json?    @map("env_vars") @db.JsonB
+  entrypoint    String?
+  command       String?
+  errorLog      String?  @map("error_log") @db.Text
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([status])
+  @@map("containers")
+}
+
+model GithubRepo {
+  id            String   @id @default(uuid()) @db.Uuid
+  projectId     String   @unique @map("project_id") @db.Uuid
+  userId        String   @map("user_id") @db.Uuid
+  repoUrl       String   @map("repo_url")
+  repoFullName  String   @map("repo_full_name")
+  defaultBranch String   @default("main") @map("default_branch")
+  githubInstallationId String? @map("github_installation_id")
+  webhookSecret String?  @map("webhook_secret")
+  lastSyncedAt  DateTime? @map("last_synced_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([repoFullName])
+  @@map("github_repos")
+}
+
+model ChatMessage {
+  id        String   @id @default(uuid()) @db.Uuid
+  projectId String   @map("project_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  message   String   @db.Text
+  createdAt DateTime @default(now()) @map("created_at")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, createdAt])
+  @@index([userId])
+  @@map("chat_messages")
+}
+
+enum NotificationType {
+  PROJECT_INVITE
+  MEMBER_JOINED
+  MEMBER_LEFT
+  ROLE_CHANGED
+  FILE_EDITED
+  MENTION
+  PROJECT_ARCHIVED
+  PROJECT_DELETED
+}
+
+model Notification {
+  id        String           @id @default(uuid()) @db.Uuid
+  userId    String           @map("user_id") @db.Uuid
+  type      NotificationType
+  title     String
+  message   String?          @db.Text
+  data      Json?            @db.JsonB
+  isRead    Boolean          @default(false) @map("is_read")
+  projectId String?          @map("project_id") @db.Uuid
+  actorId   String?          @map("actor_id") @db.Uuid
+  createdAt DateTime         @default(now()) @map("created_at")
+  updatedAt DateTime         @updatedAt @map("updated_at")
+
+  user  User  @relation("UserNotifications", fields: [userId], references: [id], onDelete: Cascade)
+  actor User? @relation("NotificationActor", fields: [actorId], references: [id])
+  project Project? @relation(fields: [projectId], references: [id])
+
+  @@index([userId, isRead])
+  @@index([userId, createdAt])
+  @@index([projectId])
+  @@map("notifications")
+}
+
+model UserFavorite {
+  userId    String   @map("user_id") @db.Uuid
+  projectId String   @map("project_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@id([userId, projectId])
+  @@index([userId])
+  @@index([projectId])
+  @@map("user_favorites")
 }

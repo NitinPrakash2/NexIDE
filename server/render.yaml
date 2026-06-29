@@ -1,0 +1,57 @@
+services:
+  - type: web
+    name: nexide-server
+    env: node
+    region: singapore
+    plan: starter
+    buildCommand: npm ci && npx prisma generate && npx prisma migrate deploy
+    startCommand: node src/server.js
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "5000"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: nexide-db
+          property: connectionString
+      - key: COOKIE_SECRET
+        generateValue: true
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: CLIENT_URL
+        value: https://nexide.app
+      - key: LOG_LEVEL
+        value: info
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_CALLBACK_URL
+        sync: false
+      - key: GITHUB_CLIENT_ID
+        sync: false
+      - key: GITHUB_CLIENT_SECRET
+        sync: false
+      - key: GITHUB_CALLBACK_URL
+        sync: false
+      - key: GITHUB_APP_ID
+        sync: false
+      - key: GITHUB_PRIVATE_KEY
+        sync: false
+      - key: GITHUB_WEBHOOK_SECRET
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-4o-mini
+
+databases:
+  - name: nexide-db
+    region: singapore
+    plan: starter
+    databaseName: nexide
+    user: nexide

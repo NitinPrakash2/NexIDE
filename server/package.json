@@ -10,25 +10,36 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
+    "test": "node test/runner.js",
     "lint": "eslint src/",
     "format": "prettier --write src/",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:migrate:prod": "prisma migrate deploy",
     "prisma:studio": "prisma studio",
-    "prisma:seed": "node prisma/seed.js"
+    "prisma:seed": "node prisma/seed.js",
+    "deploy:render": "git push render main"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
+    "bcryptjs": "^3.0.3",
     "compression": "^1.7.4",
     "cookie-parser": "^1.4.6",
     "cors": "^2.8.5",
+    "dockerode": "^5.0.1",
     "dotenv": "^16.4.5",
     "express": "^4.21.0",
     "express-rate-limit": "^7.4.1",
+    "google-auth-library": "^10.9.0",
     "helmet": "^7.1.0",
+    "jsonwebtoken": "^9.0.3",
+    "lib0": "^0.2.117",
     "morgan": "^1.10.0",
+    "openai": "^6.45.0",
+    "socket.io": "^4.8.3",
+    "socket.io-client": "^4.8.3",
     "winston": "^3.14.0",
+    "yjs": "^13.6.31",
     "zod": "^3.23.8"
   },
   "devDependencies": {
@@ -36,6 +47,11 @@
     "prettier": "^3.3.3",
     "prisma": "^5.22.0"
   },
-  "keywords": ["nexide", "collaborative", "ide", "cloud-ide"],
+  "keywords": [
+    "nexide",
+    "collaborative",
+    "ide",
+    "cloud-ide"
+  ],
   "license": "MIT"
 }

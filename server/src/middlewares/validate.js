@@ -15,7 +15,11 @@ export const validate = (schema, source = "body") => {
       throw AppError.unprocessable("Validation failed", errors);
     }
 
-    req[source] = result.data;
+    if (source === "params") {
+      req[source] = { ...req[source], ...result.data };
+    } else {
+      req[source] = result.data;
+    }
     next();
   };
 };

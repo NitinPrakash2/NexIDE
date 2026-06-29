@@ -1,4 +1,5 @@
 import path from "path";
+import fs from "fs";
 import { fileURLToPath } from "url";
 import winston from "winston";
 import { env } from "./env.js";
@@ -7,6 +8,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const logDir = path.resolve(__dirname, "..", "logs");
+if (!fs.existsSync(logDir)) {
+  fs.mkdirSync(logDir, { recursive: true });
+}
 
 const logFormat = winston.format.combine(
   winston.format.timestamp({ format: "YYYY-MM-DD HH:mm:ss" }),

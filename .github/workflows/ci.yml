@@ -1,0 +1,86 @@
+name: NexIDE CI
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - "server/**"
+      - ".github/workflows/**"
+  pull_request:
+    branches: [main]
+    paths:
+      - "server/**"
+
+env:
+  NODE_VERSION: "20"
+
+jobs:
+  lint:
+    name: Lint & Format
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+          cache-dependency-path: server/package-lock.json
+      - run: npm ci
+      - run: npx eslint src/ --max-warnings 0
+
+  test:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: nexide
+          POSTGRES_PASSWORD: nexide_test
+          POSTGRES_DB: nexide_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+          cache-dependency-path: server/package-lock.json
+      - run: npm ci
+      - name: Generate Prisma Client
+        run: npx prisma generate
+      - name: Run Migrations
+        run: npx prisma migrate deploy
+        env:
+          DATABASE_URL: postgresql://nexide:nexide_test@localhost:5432/nexide_test
+      - name: Start Server & Run Tests
+        run: |
+          node src/server.js &
+          SERVER_PID=$!
+          sleep 5
+          node test/runner.js
+          EXIT_CODE=$?
+          kill $SERVER_PID 2>/dev/null || true
+          exit $EXIT_CODE
+        env:
+          NODE_ENV: test
+          PORT: "5000"
+          DATABASE_URL: postgresql://nexide:nexide_test@localhost:5432/nexide_test
+          COOKIE_SECRET: test-cookie-secret-at-least-32-characters-long
+          JWT_ACCESS_SECRET: test-jwt-access-secret-at-least-32-characters
+          JWT_REFRESH_SECRET: test-jwt-refresh-secret-at-least-32-characters
+          CLIENT_URL: http://localhost:5173
+          LOG_LEVEL: error
+

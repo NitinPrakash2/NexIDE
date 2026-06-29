@@ -1,13 +1,23 @@
+import http from "http";
 import app from "./app.js";
 import { env, logger } from "./config/index.js";
 import { prisma } from "./lib/prisma.js";
+import { initSocket } from "./lib/socket.js";
+import { initDocker } from "./lib/docker.js";
+import { initAi } from "./lib/ai.js";
 
 const startServer = async () => {
   try {
     await prisma.$connect();
     logger.info("Connected to Neon PostgreSQL database");
 
-    const server = app.listen(env.PORT, () => {
+    initDocker();
+    initAi();
+
+    const server = http.createServer(app);
+    initSocket(server);
+
+    server.listen(env.PORT, () => {
       logger.info(`NexIDE server started on port ${env.PORT}`, {
         environment: env.NODE_ENV,
         port: env.PORT,

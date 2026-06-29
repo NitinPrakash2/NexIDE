@@ -5,10 +5,12 @@ import helmet from "helmet";
 import cors from "cors";
 import morgan from "morgan";
 import { env, corsConfig, globalRateLimiter, morganStream } from "./config/index.js";
-import { errorHandler, notFoundHandler } from "./middlewares/index.js";
+import { errorHandler, notFoundHandler, requestId } from "./middlewares/index.js";
 import routes from "./routes/index.js";
 
 const app = express();
+
+app.use(requestId);
 
 app.use(
   helmet({
@@ -21,7 +23,12 @@ app.use(cors(corsConfig));
 
 app.use(compression());
 
-app.use(express.json({ limit: "10mb" }));
+app.use(express.json({
+  limit: "10mb",
+  verify: (req, _res, buf) => {
+    req.rawBody = buf.toString();
+  },
+}));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use(cookieParser(env.COOKIE_SECRET));
 
