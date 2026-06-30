@@ -76,3 +76,7 @@ export const usernameParamSchema = z.object({
     .trim()
     .toLowerCase(),
 });
+
+export const updateAvatarSchema = z.object({
+  avatar: z.string().min(1, "Avatar data is required"),
+});

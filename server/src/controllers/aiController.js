@@ -2,6 +2,7 @@ import { AiService } from "../services/aiService.js";
 import { asyncHandler, ApiResponse } from "../utils/index.js";
 import { HTTP_STATUS } from "../constants/index.js";
 import { logger } from "../config/index.js";
+import { getIndexStats, clearProjectIndex } from "../lib/codeIndexer.js";
 
 const aiService = new AiService();
 
@@ -118,4 +119,21 @@ export const chatStream = asyncHandler(async (req, res) => {
 
   res.write("data: [DONE]\n\n");
   res.end();
+});
+
+export const getCodeIndexStats = asyncHandler(async (req, res) => {
+  const stats = getIndexStats(req.query.projectId);
+  ApiResponse.ok("Code index stats", stats).send(res);
+});
+
+export const reindexCode = asyncHandler(async (req, res) => {
+  const { projectId } = req.body;
+  if (!projectId) {
+    return res.status(422).json({ success: false, message: "projectId is required" });
+  }
+  clearProjectIndex(projectId);
+  const { indexProject } = await import("../lib/codeIndexer.js");
+  await indexProject(projectId);
+  const stats = getIndexStats(projectId);
+  ApiResponse.ok("Project re-indexed", stats).send(res);
 });

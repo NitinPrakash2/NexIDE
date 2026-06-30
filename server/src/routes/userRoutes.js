@@ -16,6 +16,7 @@ import {
   changePasswordSchema,
   updatePreferencesSchema,
   usernameParamSchema,
+  updateAvatarSchema,
 } from "../validators/userValidator.js";
 import { apiRateLimiter } from "../config/rateLimiter.js";
 
@@ -23,7 +24,7 @@ const router = Router();
 
 router.get("/me", authenticate, getMe);
 router.patch("/me", authenticate, validate(updateProfileSchema), updateMe);
-router.patch("/me/avatar", authenticate, updateAvatar);
+router.patch("/me/avatar", authenticate, validate(updateAvatarSchema), updateAvatar);
 router.patch("/change-password", authenticate, validate(changePasswordSchema), changePassword);
 router.delete("/me", authenticate, deleteMe);
 

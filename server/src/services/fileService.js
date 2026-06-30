@@ -5,6 +5,7 @@ import { NotificationService } from "./notificationService.js";
 import { ActivityLogService } from "./activityLogService.js";
 import { AppError } from "../utils/appError.js";
 import { log } from "../helpers/logger.js";
+import { clearProjectIndex } from "../lib/codeIndexer.js";
 
 const fileRepository = new FileRepository();
 const memberRepository = new MemberRepository();
@@ -72,6 +73,7 @@ export class FileService {
     await activityLogService.log(projectId, userId, "FOLDER_CREATED", `Created folder ${path}`);
 
     log.info("Folder created", { projectId, folderId: folder.id, path });
+    clearProjectIndex(projectId);
     return folder;
   }
 
@@ -100,6 +102,7 @@ export class FileService {
     });
 
     log.info("Folder renamed", { projectId, folderId, oldPath, newPath });
+    clearProjectIndex(projectId);
     return updated;
   }
 
@@ -127,6 +130,7 @@ export class FileService {
     }
 
     log.info("Folder deleted", { projectId, folderId, path: folder.path });
+    clearProjectIndex(projectId);
   }
 
   async createFile(projectId, userId, { name, folderId, content }) {
@@ -161,6 +165,7 @@ export class FileService {
 
     await activityLogService.log(projectId, userId, "FILE_CREATED", `Created file ${path}`);
 
+    clearProjectIndex(projectId);
     log.info("File created", { projectId, fileId: file.id, path });
     return file;
   }
@@ -207,6 +212,7 @@ export class FileService {
       await activityLogService.log(projectId, userId, "FILE_UPDATED", `Updated file ${updated.path}`);
     }
 
+    clearProjectIndex(projectId);
     log.info("File updated", { projectId, fileId });
     return updated;
   }
@@ -238,6 +244,7 @@ export class FileService {
     });
 
     log.info("File renamed", { projectId, fileId, oldPath, newPath });
+    clearProjectIndex(projectId);
     return updated;
   }
 
@@ -251,6 +258,7 @@ export class FileService {
 
     await fileRepository.deleteFile(fileId);
     await activityLogService.log(projectId, userId, "FILE_DELETED", `Deleted file ${file.path}`);
+    clearProjectIndex(projectId);
     log.info("File deleted", { projectId, fileId, path: file.path });
   }
 
@@ -286,6 +294,7 @@ export class FileService {
       `Moved file ${file.path} to ${newPath}`);
 
     log.info("File moved", { projectId, fileId, oldPath: file.path, newPath });
+    clearProjectIndex(projectId);
     return updated;
   }
 
@@ -329,6 +338,7 @@ export class FileService {
       `Copied file ${file.path} to ${newPath}`);
 
     log.info("File copied", { projectId, fileId, newPath });
+    clearProjectIndex(projectId);
     return copied;
   }
 
@@ -366,6 +376,7 @@ export class FileService {
     await activityLogService.log(projectId, userId, "FILE_CREATED", `Uploaded file ${filePath}`);
 
     log.info("File uploaded", { projectId, fileId: file.id, path: filePath });
+    clearProjectIndex(projectId);
     return file;
   }
 

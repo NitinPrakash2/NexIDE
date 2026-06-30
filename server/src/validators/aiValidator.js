@@ -23,3 +23,11 @@ export const createConversationSchema = z.object({
 export const updateConversationSchema = z.object({
   title: z.string().min(1).max(200).optional(),
 });
+
+export const conversationIdParamSchema = z.object({
+  id: z.string().uuid("Invalid conversation ID"),
+});
+
+export const conversationQuerySchema = z.object({
+  projectId: z.string().uuid().optional(),
+});

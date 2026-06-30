@@ -22,6 +22,7 @@ import {
   updateProjectSchema,
   projectIdParamSchema,
   projectQuerySchema,
+  projectSlugParamSchema,
 } from "../validators/projectValidator.js";
 import { apiRateLimiter } from "../config/rateLimiter.js";
 
@@ -32,9 +33,9 @@ router.use(authenticate);
 router.get("/", validate(projectQuerySchema, "query"), getMyProjects);
 router.post("/", validate(createProjectSchema), createProject);
 
-router.get("/favorites", getFavorites);
-router.get("/recent", getRecentProjects);
-router.get("/check-slug/:slug", checkProjectSlug);
+router.get("/favorites", validate(projectQuerySchema, "query"), getFavorites);
+router.get("/recent", validate(projectQuerySchema, "query"), getRecentProjects);
+router.get("/check-slug/:slug", validate(projectSlugParamSchema, "params"), checkProjectSlug);
 
 router.get("/:id", validate(projectIdParamSchema, "params"), getProjectById);
 router.patch("/:id", validate(projectIdParamSchema, "params"), validate(updateProjectSchema), updateProject);

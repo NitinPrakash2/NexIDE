@@ -21,6 +21,11 @@ export const paginationSchema = z.object({
   search: z.string().optional(),
 });
 
+export const uuidParamSchema = (name = "id") =>
+  z.object({
+    [name]: z.string().uuid(`Invalid ${name} format`),
+  });
+
 export const emailSchema = z.string().email("Invalid email address");
 
 export const passwordSchema = z

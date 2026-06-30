@@ -40,3 +40,53 @@ export const regenerateWebhook = asyncHandler(async (req, res) => {
   const result = await githubService.regenerateWebhookSecret(id, req.user.id);
   ApiResponse.ok("Webhook secret regenerated", result).send(res);
 });
+
+// ── Git Operations ─────────────────────────────────────
+
+export const listBranches = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const branches = await githubService.listBranches(id, req.user.id);
+  ApiResponse.ok("Branches fetched", { branches }).send(res);
+});
+
+export const createBranch = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const result = await githubService.createBranch(id, req.user.id, req.body);
+  ApiResponse.created("Branch created", result).send(res);
+});
+
+export const deleteBranch = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const result = await githubService.deleteBranch(id, req.user.id, req.body);
+  ApiResponse.ok("Branch deleted", result).send(res);
+});
+
+export const checkoutBranch = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const result = await githubService.checkoutBranch(id, req.user.id, req.body);
+  ApiResponse.ok("Branch checked out", result).send(res);
+});
+
+export const commit = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const result = await githubService.commit(id, req.user.id, req.body);
+  ApiResponse.ok("Commit created", result).send(res);
+});
+
+export const push = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const result = await githubService.push(id, req.user.id, req.body);
+  ApiResponse.ok("Push completed", result).send(res);
+});
+
+export const pull = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const result = await githubService.pull(id, req.user.id);
+  ApiResponse.ok("Pull completed", result).send(res);
+});
+
+export const getStatus = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const result = await githubService.getStatus(id, req.user.id);
+  ApiResponse.ok("Status fetched", result).send(res);
+});

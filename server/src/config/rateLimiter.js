@@ -35,3 +35,27 @@ export const apiRateLimiter = rateLimit({
     message: "Too many API requests, please slow down.",
   },
 });
+
+export const verificationRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    statusCode: 429,
+    message: "Too many verification attempts, please try again later.",
+  },
+});
+
+export const containerRateLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    statusCode: 429,
+    message: "Too many container operations, please slow down.",
+  },
+});

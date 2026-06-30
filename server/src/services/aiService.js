@@ -2,6 +2,7 @@ import { prisma } from "../lib/prisma.js";
 import { AppError } from "../utils/appError.js";
 import { chatCompletion, chatCompletionStream, aiAvailable } from "../lib/ai.js";
 import { MemberRepository } from "../repositories/memberRepository.js";
+import { buildRagContext, clearProjectIndex } from "../lib/codeIndexer.js";
 
 const memberRepository = new MemberRepository();
 
@@ -78,6 +79,7 @@ export class AiService {
   async chat(userId, { conversationId, message, projectId, type = "chat", code, language, errorMessage }) {
     await this._guardProjectAccess(projectId, userId);
     const fileContext = await this._loadFileContext(projectId);
+    const ragContext = await buildRagContext(projectId, message || code);
 
     if (!aiAvailable()) {
       return {
@@ -111,6 +113,7 @@ export class AiService {
       language,
       errorMessage,
       fileContext,
+      ragContext,
       model: conv.model,
     });
 
@@ -128,6 +131,7 @@ export class AiService {
   async *chatStream(userId, { conversationId, message, projectId, type = "chat", code, language, errorMessage }) {
     await this._guardProjectAccess(projectId, userId);
     const fileContext = await this._loadFileContext(projectId);
+    const ragContext = await buildRagContext(projectId, message || code);
 
     if (!aiAvailable()) {
       yield {
@@ -161,6 +165,7 @@ export class AiService {
       language,
       errorMessage,
       fileContext,
+      ragContext,
       model: conv.model,
     });
 

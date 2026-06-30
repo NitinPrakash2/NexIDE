@@ -16,3 +16,7 @@ export const updateContainerSchema = z.object({
   memoryLimit: z.string().optional(),
   envVars: z.record(z.string()).optional(),
 });
+
+export const containerIdParamSchema = z.object({
+  containerId: z.string().uuid("Invalid container ID"),
+});

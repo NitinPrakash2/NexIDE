@@ -70,7 +70,7 @@ function getSystemPrompt(type = "default") {
   return SYSTEM_PROMPTS[type] || SYSTEM_PROMPTS.default;
 }
 
-function buildMessages({ type, messages, code, language, errorMessage, fileContext }) {
+function buildMessages({ type, messages, code, language, errorMessage, fileContext, ragContext }) {
   const system = getSystemPrompt(type);
   const result = [{ role: "system", content: system }];
 
@@ -78,6 +78,13 @@ function buildMessages({ type, messages, code, language, errorMessage, fileConte
     result.push({
       role: "system",
       content: `The user is working on a project with the following files:\n${fileContext}`,
+    });
+  }
+
+  if (ragContext) {
+    result.push({
+      role: "system",
+      content: `Here is relevant code from the user's project to help answer their question:\n${ragContext}`,
     });
   }
 
@@ -166,12 +173,12 @@ async function* geminiStream({ system, messages, model, temperature }) {
   };
 }
 
-export async function chatCompletion({ type = "chat", messages, code, language, errorMessage, fileContext, model }) {
+export async function chatCompletion({ type = "chat", messages, code, language, errorMessage, fileContext, ragContext, model }) {
   if (!aiAvailable()) {
     throw new Error("AI is not available. Configure GEMINI_API_KEY or OPENAI_API_KEY in environment.");
   }
 
-  const msgs = buildMessages({ type, messages, code, language, errorMessage, fileContext });
+  const msgs = buildMessages({ type, messages, code, language, errorMessage, fileContext, ragContext });
   const system = msgs.filter((m) => m.role === "system").map((m) => m.content).join("\n");
   const chatMessages = msgs.filter((m) => m.role !== "system");
 
@@ -195,12 +202,12 @@ export async function chatCompletion({ type = "chat", messages, code, language, 
   };
 }
 
-export async function* chatCompletionStream({ type = "chat", messages, code, language, errorMessage, fileContext, model }) {
+export async function* chatCompletionStream({ type = "chat", messages, code, language, errorMessage, fileContext, ragContext, model }) {
   if (!aiAvailable()) {
     throw new Error("AI is not available. Configure GEMINI_API_KEY or OPENAI_API_KEY in environment.");
   }
 
-  const msgs = buildMessages({ type, messages, code, language, errorMessage, fileContext });
+  const msgs = buildMessages({ type, messages, code, language, errorMessage, fileContext, ragContext });
 
   if (providerType === "gemini") {
     const system = msgs.filter((m) => m.role === "system").map((m) => m.content).join("\n");

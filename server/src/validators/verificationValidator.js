@@ -15,3 +15,7 @@ export const resetPasswordSchema = z.object({
       "Password must contain at least one uppercase letter, one lowercase letter, and one number"
     ),
 });
+
+export const verificationTokenParamSchema = z.object({
+  token: z.string().min(1, "Verification token is required"),
+});

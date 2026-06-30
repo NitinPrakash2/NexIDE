@@ -37,6 +37,7 @@
     "lib0": "^0.2.117",
     "morgan": "^1.10.0",
     "openai": "^6.45.0",
+    "simple-git": "^3.36.0",
     "socket.io": "^4.8.3",
     "socket.io-client": "^4.8.3",
     "winston": "^3.14.0",

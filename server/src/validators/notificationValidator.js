@@ -5,3 +5,7 @@ export const notificationQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(100).optional().default(20),
   unreadOnly: z.coerce.boolean().optional().default(false),
 });
+
+export const notificationIdParamSchema = z.object({
+  id: z.string().uuid("Invalid notification ID"),
+});

@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { authenticate, validate } from "../middlewares/index.js";
-import { forgotPasswordSchema, resetPasswordSchema } from "../validators/verificationValidator.js";
-import { authRateLimiter } from "../config/rateLimiter.js";
+import { forgotPasswordSchema, resetPasswordSchema, verificationTokenParamSchema } from "../validators/verificationValidator.js";
+import { authRateLimiter, verificationRateLimiter } from "../config/rateLimiter.js";
 import {
   sendVerificationEmail,
   verifyEmail,
@@ -11,8 +11,8 @@ import {
 
 const router = Router();
 
-router.post("/send-verification", authenticate, sendVerificationEmail);
-router.get("/verify-email/:token", verifyEmail);
+router.post("/send-verification", authenticate, verificationRateLimiter, sendVerificationEmail);
+router.get("/verify-email/:token", validate(verificationTokenParamSchema, "params"), verifyEmail);
 router.post("/forgot-password", authRateLimiter, validate(forgotPasswordSchema), forgotPassword);
 router.post("/reset-password", authRateLimiter, validate(resetPasswordSchema), resetPassword);
 

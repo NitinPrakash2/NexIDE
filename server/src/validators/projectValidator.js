@@ -82,3 +82,11 @@ export const projectQuerySchema = z.object({
 });
 
 export { slugify };
+
+export const projectSlugParamSchema = z.object({
+  slug: z
+    .string()
+    .min(1, "Slug is required")
+    .max(200)
+    .regex(/^[a-z0-9-]+$/, "Slug can only contain lowercase letters, numbers, and hyphens"),
+});
