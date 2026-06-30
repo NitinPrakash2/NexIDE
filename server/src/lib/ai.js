@@ -1,7 +1,9 @@
 import OpenAI from "openai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { env, logger } from "../config/index.js";
 
 let provider = null;
+let providerType = null;
 let isAvailable = false;
 
 const SYSTEM_PROMPTS = {
@@ -27,23 +29,37 @@ Suggest fixes with corrected code. Explain why the error occurred and how the fi
 };
 
 export function initAi() {
-  const apiKey = env.OPENAI_API_KEY;
-  if (!apiKey) {
-    isAvailable = false;
-    provider = null;
-    logger.warn("OPENAI_API_KEY not configured — AI features will be unavailable");
-    return;
+  const geminiKey = env.GEMINI_API_KEY;
+  const openaiKey = env.OPENAI_API_KEY;
+
+  if (geminiKey) {
+    try {
+      provider = new GoogleGenerativeAI(geminiKey);
+      providerType = "gemini";
+      isAvailable = true;
+      logger.info("AI provider initialized: Google Gemini");
+      return;
+    } catch (error) {
+      logger.warn("Gemini initialization failed", { error: error.message });
+    }
   }
 
-  try {
-    provider = new OpenAI({ apiKey });
-    isAvailable = true;
-    logger.info("AI provider initialized");
-  } catch (error) {
-    isAvailable = false;
-    provider = null;
-    logger.warn("AI initialization failed", { error: error.message });
+  if (openaiKey) {
+    try {
+      provider = new OpenAI({ apiKey: openaiKey });
+      providerType = "openai";
+      isAvailable = true;
+      logger.info("AI provider initialized: OpenAI");
+      return;
+    } catch (error) {
+      logger.warn("OpenAI initialization failed", { error: error.message });
+    }
   }
+
+  isAvailable = false;
+  provider = null;
+  providerType = null;
+  logger.warn("No AI API key configured (try GEMINI_API_KEY for free tier) — AI features will be unavailable");
 }
 
 export function aiAvailable() {
@@ -87,14 +103,83 @@ function buildMessages({ type, messages, code, language, errorMessage, fileConte
   return result;
 }
 
+function toGeminiHistory(messages) {
+  const history = [];
+  for (const msg of messages) {
+    if (msg.role === "system") continue;
+    history.push({
+      role: msg.role === "assistant" ? "model" : "user",
+      parts: [{ text: msg.content }],
+    });
+  }
+  return history;
+}
+
+async function geminiCompletion({ system, messages, model, temperature }) {
+  const genModel = provider.getGenerativeModel({
+    model: model || env.GEMINI_MODEL,
+    systemInstruction: system,
+    generationConfig: { temperature: temperature ?? 0.7 },
+  });
+
+  const history = toGeminiHistory(messages);
+  const lastMsg = history.pop();
+  const chat = genModel.startChat({ history });
+  const result = await chat.sendMessage(lastMsg.parts[0].text);
+
+  const response = result.response;
+  return {
+    content: response.text(),
+    role: "assistant",
+    tokens: response.usageMetadata?.totalTokenCount || 0,
+    model: model || env.GEMINI_MODEL,
+  };
+}
+
+async function* geminiStream({ system, messages, model, temperature }) {
+  const genModel = provider.getGenerativeModel({
+    model: model || env.GEMINI_MODEL,
+    systemInstruction: system,
+    generationConfig: { temperature: temperature ?? 0.7 },
+  });
+
+  const history = toGeminiHistory(messages);
+  const lastMsg = history.pop();
+  const chat = genModel.startChat({ history });
+  const result = await chat.sendMessageStream(lastMsg.parts[0].text);
+
+  let fullContent = "";
+  for await (const chunk of result.stream) {
+    const text = chunk.text();
+    if (text) {
+      fullContent += text;
+      yield { content: text, done: false };
+    }
+  }
+
+  yield {
+    content: fullContent,
+    done: true,
+    role: "assistant",
+    tokens: 0,
+    model: model || env.GEMINI_MODEL,
+  };
+}
+
 export async function chatCompletion({ type = "chat", messages, code, language, errorMessage, fileContext, model }) {
   if (!aiAvailable()) {
-    throw new Error("AI is not available. Configure OPENAI_API_KEY in environment.");
+    throw new Error("AI is not available. Configure GEMINI_API_KEY or OPENAI_API_KEY in environment.");
   }
 
   const msgs = buildMessages({ type, messages, code, language, errorMessage, fileContext });
-  const modelName = model || env.OPENAI_MODEL || "gpt-4o-mini";
+  const system = msgs.filter((m) => m.role === "system").map((m) => m.content).join("\n");
+  const chatMessages = msgs.filter((m) => m.role !== "system");
 
+  if (providerType === "gemini") {
+    return geminiCompletion({ system, messages: chatMessages, model, temperature: type === "generate" ? 0.3 : 0.7 });
+  }
+
+  const modelName = model || env.OPENAI_MODEL || "gpt-4o-mini";
   const response = await provider.chat.completions.create({
     model: modelName,
     messages: msgs,
@@ -112,12 +197,19 @@ export async function chatCompletion({ type = "chat", messages, code, language, 
 
 export async function* chatCompletionStream({ type = "chat", messages, code, language, errorMessage, fileContext, model }) {
   if (!aiAvailable()) {
-    throw new Error("AI is not available. Configure OPENAI_API_KEY in environment.");
+    throw new Error("AI is not available. Configure GEMINI_API_KEY or OPENAI_API_KEY in environment.");
   }
 
   const msgs = buildMessages({ type, messages, code, language, errorMessage, fileContext });
-  const modelName = model || env.OPENAI_MODEL || "gpt-4o-mini";
 
+  if (providerType === "gemini") {
+    const system = msgs.filter((m) => m.role === "system").map((m) => m.content).join("\n");
+    const chatMessages = msgs.filter((m) => m.role !== "system");
+    yield* geminiStream({ system, messages: chatMessages, model, temperature: type === "generate" ? 0.3 : 0.7 });
+    return;
+  }
+
+  const modelName = model || env.OPENAI_MODEL || "gpt-4o-mini";
   const stream = await provider.chat.completions.create({
     model: modelName,
     messages: msgs,

@@ -11,6 +11,8 @@ import notificationRoutes from "./notificationRoutes.js";
 import runtimeRoutes from "./runtimeRoutes.js";
 import aiRoutes from "./aiRoutes.js";
 import githubRoutes from "./githubRoutes.js";
+import verificationRoutes from "./verificationRoutes.js";
+import activityRoutes from "./activityRoutes.js";
 
 const router = Router();
 
@@ -26,5 +28,7 @@ router.use("/ai", aiRoutes);
 router.use("/notifications", notificationRoutes);
 router.use("/invitations", invitationRoutes);
 router.use("/github", githubRoutes);
+router.use("/projects", activityRoutes);
+router.use("/auth", verificationRoutes);
 
 export default router;

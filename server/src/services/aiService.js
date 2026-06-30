@@ -81,7 +81,7 @@ export class AiService {
 
     if (!aiAvailable()) {
       return {
-        content: "AI is not configured. Ask your administrator to set the OPENAI_API_KEY environment variable.",
+        content: "AI is not configured. Ask your administrator to set the GEMINI_API_KEY (free) or OPENAI_API_KEY environment variable.",
         role: "assistant",
         conversationId: null,
       };
@@ -131,7 +131,7 @@ export class AiService {
 
     if (!aiAvailable()) {
       yield {
-        content: "AI is not configured. Ask your administrator to set the OPENAI_API_KEY environment variable.",
+        content: "AI is not configured. Ask your administrator to set the GEMINI_API_KEY (free) or OPENAI_API_KEY environment variable.",
         done: true,
         conversationId: null,
       };

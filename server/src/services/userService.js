@@ -103,6 +103,15 @@ export class UserService {
     };
   }
 
+  async updateAvatarFromDataUrl(userId, dataUrl) {
+    const user = await userRepository.findActiveById(userId);
+    if (!user) throw AppError.notFound("User not found");
+
+    await userRepository.updateById(userId, { avatar: dataUrl });
+    log.info("Avatar updated", { userId });
+    return { url: dataUrl };
+  }
+
   async updateAvatar(userId, buffer, filename, mimetype) {
     const user = await userRepository.findActiveById(userId);
     if (!user) {

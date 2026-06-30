@@ -48,6 +48,9 @@ const envSchema = z.object({
 
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_MODEL: z.string().default("gpt-4o-mini"),
+
+  GEMINI_API_KEY: z.string().optional(),
+  GEMINI_MODEL: z.string().default("gemini-2.0-flash"),
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -91,4 +94,7 @@ export const env = Object.freeze({
 
   OPENAI_API_KEY: parsed.data.OPENAI_API_KEY,
   OPENAI_MODEL: parsed.data.OPENAI_MODEL,
+
+  GEMINI_API_KEY: parsed.data.GEMINI_API_KEY,
+  GEMINI_MODEL: parsed.data.GEMINI_MODEL,
 });

@@ -1,10 +1,12 @@
 import { prisma } from "../lib/prisma.js";
 import { ProjectRepository } from "../repositories/projectRepository.js";
+import { MemberRepository } from "../repositories/memberRepository.js";
 import { slugify } from "../validators/projectValidator.js";
 import { AppError } from "../utils/appError.js";
 import { log } from "../helpers/logger.js";
 
 const projectRepository = new ProjectRepository();
+const memberRepository = new MemberRepository();
 
 export class ProjectService {
   async create(ownerId, data) {
@@ -46,14 +48,34 @@ export class ProjectService {
     return project;
   }
 
+  async _guardAccess(projectId, userId) {
+    const membership = await memberRepository.findByProjectAndUser(projectId, userId);
+    if (!membership) throw AppError.forbidden("You do not have access to this project");
+    return membership;
+  }
+
+  async _guardWrite(projectId, userId) {
+    const membership = await this._guardAccess(projectId, userId);
+    if (!["OWNER", "ADMIN", "EDITOR"].includes(membership.role)) {
+      throw AppError.forbidden("You do not have permission to modify this project");
+    }
+    return membership;
+  }
+
+  async _guardManager(projectId, userId) {
+    const membership = await this._guardAccess(projectId, userId);
+    if (!["OWNER", "ADMIN"].includes(membership.role)) {
+      throw AppError.forbidden("Only managers can perform this action");
+    }
+    return membership;
+  }
+
   async getById(projectId, userId) {
     const project = await projectRepository.findById(projectId);
     if (!project || project.deletedAt) {
       throw AppError.notFound("Project not found");
     }
-    if (project.ownerId !== userId) {
-      throw AppError.forbidden("You do not have access to this project");
-    }
+    await this._guardAccess(projectId, userId);
     return project;
   }
 
@@ -89,13 +111,9 @@ export class ProjectService {
   }
 
   async restore(projectId, userId) {
+    await this._guardManager(projectId, userId);
     const project = await projectRepository.findById(projectId);
-    if (!project) {
-      throw AppError.notFound("Project not found");
-    }
-    if (project.ownerId !== userId) {
-      throw AppError.forbidden("You do not have access to this project");
-    }
+    if (!project) throw AppError.notFound("Project not found");
     if (project.status !== "ARCHIVED") {
       throw AppError.badRequest("Project is not archived");
     }
@@ -118,13 +136,12 @@ export class ProjectService {
   }
 
   async permanentDelete(projectId, userId) {
-    const project = await projectRepository.findById(projectId);
-    if (!project) {
-      throw AppError.notFound("Project not found");
-    }
-    if (project.ownerId !== userId) {
+    const membership = await this._guardAccess(projectId, userId);
+    if (membership.role !== "OWNER") {
       throw AppError.forbidden("Only the owner can permanently delete a project");
     }
+    const project = await projectRepository.findById(projectId);
+    if (!project) throw AppError.notFound("Project not found");
 
     await projectRepository.permanentDelete(projectId);
     log.info("Project permanently deleted", { projectId, ownerId: userId });

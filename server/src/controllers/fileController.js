@@ -48,3 +48,28 @@ export const deleteFile = asyncHandler(async (req, res) => {
   await fileService.deleteFile(req.params.projectId, req.user.id, req.params.fileId);
   ApiResponse.ok("File deleted successfully").send(res);
 });
+
+export const moveFile = asyncHandler(async (req, res) => {
+  const file = await fileService.moveFile(req.params.projectId, req.user.id, req.params.fileId, req.body);
+  ApiResponse.ok("File moved successfully", file).send(res);
+});
+
+export const copyFile = asyncHandler(async (req, res) => {
+  const file = await fileService.copyFile(req.params.projectId, req.user.id, req.params.fileId, req.body);
+  ApiResponse.success(HTTP_STATUS.CREATED, "File copied successfully", file).send(res);
+});
+
+export const uploadFile = asyncHandler(async (req, res) => {
+  const file = await fileService.uploadFile(req.params.projectId, req.user.id, {
+    name: req.file?.originalname || req.body.name,
+    folderId: req.body.folderId,
+    content: req.file ? req.file.buffer.toString("utf-8") : req.body.content,
+    mimeType: req.file?.mimetype || null,
+  });
+  ApiResponse.success(HTTP_STATUS.CREATED, "File uploaded successfully", file).send(res);
+});
+
+export const downloadFile = asyncHandler(async (req, res) => {
+  const file = await fileService.downloadFile(req.params.projectId, req.user.id, req.params.fileId);
+  ApiResponse.ok("File fetched successfully", file).send(res);
+});

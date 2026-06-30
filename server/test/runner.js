@@ -205,6 +205,60 @@ async function run() {
   r = await req("POST", "/github/import", { token, body: { repoUrl: "not-a-valid-url" } });
   check("Import bad URL validation fails", r.status === 422);
 
+  // ── Activity Log ───────────────────────────────────────
+  process.stdout.write("\n--- Activity Log ---\n");
+  r = await req("GET", `/projects/${projectId}/activity`, { token });
+  check("List activity returns 200", r.status === 200);
+  check("Activity has items array", Array.isArray(r.body?.data?.items));
+
+  // ── Avatar Upload ─────────────────────────────────────
+  process.stdout.write("\n--- Avatar ---\n");
+  r = await req("PATCH", "/users/me/avatar", { token, body: { avatar: "data:image/png;base64,iVBORw0KGgo=" } });
+  check("Upload avatar returns 200", r.status === 200);
+  check("Avatar URL returned", !!r.body?.data?.url);
+
+  // ── File Move & Copy ──────────────────────────────────
+  process.stdout.write("\n--- File Move & Copy ---\n");
+  r = await req("POST", `/projects/${projectId}/folders`, { token, body: { name: "lib" } });
+  const destFolderId = r.body?.data?.id;
+  r = await req("POST", `/projects/${projectId}/files`, { token, body: { name: "move-test.js", content: "// move me" } });
+  const moveFileId = r.body?.data?.id;
+
+  if (moveFileId && destFolderId) {
+    r = await req("PATCH", `/projects/${projectId}/files/${moveFileId}/move`, { token, body: { folderId: destFolderId } });
+    check("Move file returns 200", r.status === 200);
+
+    r = await req("POST", `/projects/${projectId}/files/${moveFileId}/copy`, { token, body: { folderId: null } });
+    check("Copy file returns 201", r.status === 201);
+  }
+
+  // ── File Upload & Download ────────────────────────────
+  process.stdout.write("\n--- File Upload ---\n");
+  r = await req("POST", `/projects/${projectId}/files/upload`, { token, body: { name: "uploaded.txt", content: "uploaded content" } });
+  const uploadFileId = r.body?.data?.id;
+  check("Upload file returns 201", r.status === 201);
+  if (uploadFileId) {
+    r = await req("GET", `/projects/${projectId}/files/${uploadFileId}/download`, { token });
+    check("Download file returns 200", r.status === 200);
+    check("Download has content", !!r.body?.data?.content);
+  }
+
+  // ── Email Verification & Password Reset ───────────────
+  process.stdout.write("\n--- Email Verification ---\n");
+  r = await req("POST", "/auth/send-verification", { token });
+  check("Send verification returns 200", r.status === 200);
+
+  r = await req("POST", "/auth/forgot-password", { body: { email: testEmail } });
+  check("Forgot password returns 200", r.status === 200);
+
+  r = await req("POST", "/auth/reset-password", { body: { token: "invalid", password: "NewPass123" } });
+  check("Reset with invalid token returns 404", r.status === 404);
+
+  // ── Project Access (member-scoped) ────────────────────
+  process.stdout.write("\n--- Member Project Access ---\n");
+  r = await req("GET", `/projects/${projectId}`, { token });
+  check("Owner can still access project", r.status === 200);
+
   // ── Docker Runtime (graceful degradation) ────────────
   process.stdout.write("\n--- Docker Runtime ---\n");
   r = await req("POST", `/projects/${projectId}/containers`, { token, body: { image: "node:18-alpine" } });

@@ -52,3 +52,17 @@ export const folderIdParamSchema = z.object({
 export const fileIdParamSchema = z.object({
   fileId: z.string().uuid("Invalid file ID"),
 });
+
+export const moveFileSchema = z.object({
+  folderId: z.string().uuid("Invalid folder ID").nullable(),
+});
+
+export const copyFileSchema = z.object({
+  folderId: z.string().uuid("Invalid folder ID").nullable(),
+  name: z
+    .string()
+    .min(1, "File name is required")
+    .max(255, "File name must not exceed 255 characters")
+    .regex(/^[^/\\:*?"<>|]+$/, "File name contains invalid characters")
+    .optional(),
+});

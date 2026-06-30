@@ -2,8 +2,13 @@ import crypto from "crypto";
 import { prisma } from "../lib/prisma.js";
 import { MemberRepository } from "../repositories/memberRepository.js";
 import { InvitationRepository } from "../repositories/invitationRepository.js";
+import { NotificationService } from "./notificationService.js";
+import { ActivityLogService } from "./activityLogService.js";
 import { AppError } from "../utils/appError.js";
 import { log } from "../helpers/logger.js";
+
+const notificationService = new NotificationService();
+const activityLogService = new ActivityLogService();
 
 const memberRepository = new MemberRepository();
 const invitationRepository = new InvitationRepository();
@@ -52,6 +57,18 @@ export class MemberService {
     });
 
     log.info("Member invited", { projectId, email, role, invitedBy: userId });
+
+    if (targetUser) {
+      await notificationService.create({
+        userId: targetUser.id,
+        type: "PROJECT_INVITE",
+        title: "You've been invited",
+        message: `You've been invited to join the project as ${role}`,
+        projectId,
+        actorId: userId,
+      });
+    }
+
     return invitation;
   }
 
@@ -90,7 +107,27 @@ export class MemberService {
       userId,
     });
 
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, fullName: true, username: true },
+    });
     const members = await memberRepository.findByProjectId(invitation.projectId);
+    const otherMembers = members.filter((m) => m.userId !== userId);
+
+    for (const m of otherMembers) {
+      await notificationService.create({
+        userId: m.userId,
+        type: "MEMBER_JOINED",
+        title: "New member joined",
+        message: `${user?.fullName || "Someone"} joined the project as ${invitation.role}`,
+        projectId: invitation.projectId,
+        actorId: userId,
+      });
+    }
+
+    await activityLogService.log(invitation.projectId, userId, "INVITATION_ACCEPTED",
+      `${user?.fullName || "A user"} accepted the invitation`);
+
     return { projectId: invitation.projectId, members };
   }
 
@@ -137,6 +174,19 @@ export class MemberService {
     }
 
     const updated = await memberRepository.updateRole(memberId, newRole);
+
+    await notificationService.create({
+      userId: targetMember.userId,
+      type: "ROLE_CHANGED",
+      title: "Role updated",
+      message: `Your role has been changed from ${targetMember.role} to ${newRole}`,
+      projectId,
+      actorId: userId,
+    });
+
+    await activityLogService.log(projectId, userId, "MEMBER_ROLE_CHANGED",
+      `Role changed for ${targetMember.user?.fullName || "a member"} from ${targetMember.role} to ${newRole}`);
+
     log.info("Member role changed", {
       projectId,
       memberId,
@@ -167,6 +217,19 @@ export class MemberService {
     }
 
     await memberRepository.delete(memberId);
+
+    await notificationService.create({
+      userId: targetMember.userId,
+      type: "MEMBER_LEFT",
+      title: "Removed from project",
+      message: `You have been removed from the project`,
+      projectId,
+      actorId: userId,
+    });
+
+    await activityLogService.log(projectId, userId, "MEMBER_LEFT",
+      `${targetMember.user?.fullName || "A member"} was removed from the project`);
+
     log.info("Member removed", { projectId, memberId, removedBy: userId });
   }
 }

@@ -42,3 +42,12 @@ export const checkUsername = asyncHandler(async (req, res) => {
   const result = await userService.checkUsernameAvailability(req.params.username);
   ApiResponse.ok("Username availability checked", result).send(res);
 });
+
+export const updateAvatar = asyncHandler(async (req, res) => {
+  const { avatar } = req.body;
+  if (!avatar) {
+    return res.status(422).json({ success: false, message: "Avatar data is required" });
+  }
+  const user = await userService.updateAvatarFromDataUrl(req.user.id, avatar);
+  ApiResponse.ok("Avatar updated successfully", user).send(res);
+});

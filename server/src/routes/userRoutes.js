@@ -8,6 +8,7 @@ import {
   getPreferences,
   updatePreferences,
   checkUsername,
+  updateAvatar,
 } from "../controllers/userController.js";
 import { authenticate, validate } from "../middlewares/index.js";
 import {
@@ -22,6 +23,7 @@ const router = Router();
 
 router.get("/me", authenticate, getMe);
 router.patch("/me", authenticate, validate(updateProfileSchema), updateMe);
+router.patch("/me/avatar", authenticate, updateAvatar);
 router.patch("/change-password", authenticate, validate(changePasswordSchema), changePassword);
 router.delete("/me", authenticate, deleteMe);
 

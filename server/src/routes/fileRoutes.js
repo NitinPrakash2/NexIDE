@@ -9,6 +9,10 @@ import {
   updateFile,
   renameFile,
   deleteFile,
+  moveFile,
+  copyFile,
+  uploadFile,
+  downloadFile,
 } from "../controllers/fileController.js";
 import { authenticate, validate } from "../middlewares/index.js";
 import {
@@ -16,6 +20,8 @@ import {
   renameFolderSchema,
   createFileSchema,
   updateFileSchema,
+  moveFileSchema,
+  copyFileSchema,
   projectIdParamSchema,
   folderIdParamSchema,
   fileIdParamSchema,
@@ -36,5 +42,10 @@ router.get("/:projectId/files/:fileId", validate(projectIdParamSchema, "params")
 router.put("/:projectId/files/:fileId", validate(projectIdParamSchema, "params"), validate(fileIdParamSchema, "params"), validate(updateFileSchema), updateFile);
 router.patch("/:projectId/files/:fileId/rename", validate(projectIdParamSchema, "params"), validate(fileIdParamSchema, "params"), validate(renameFolderSchema), renameFile);
 router.delete("/:projectId/files/:fileId", validate(projectIdParamSchema, "params"), validate(fileIdParamSchema, "params"), deleteFile);
+
+router.patch("/:projectId/files/:fileId/move", validate(projectIdParamSchema, "params"), validate(fileIdParamSchema, "params"), validate(moveFileSchema), moveFile);
+router.post("/:projectId/files/:fileId/copy", validate(projectIdParamSchema, "params"), validate(fileIdParamSchema, "params"), validate(copyFileSchema), copyFile);
+router.post("/:projectId/files/upload", validate(projectIdParamSchema, "params"), uploadFile);
+router.get("/:projectId/files/:fileId/download", validate(projectIdParamSchema, "params"), validate(fileIdParamSchema, "params"), downloadFile);
 
 export default router;
