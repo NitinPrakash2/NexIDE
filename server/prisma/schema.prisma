@@ -237,7 +237,7 @@ model AiConversation {
   userId    String   @map("user_id") @db.Uuid
   projectId String?  @map("project_id") @db.Uuid
   title     String   @default("New conversation")
-  model     String   @default("gpt-4o-mini")
+  model     String   @default("")
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 

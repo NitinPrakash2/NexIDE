@@ -11,7 +11,7 @@ const startServer = async () => {
     await connectWithRetry();
 
     initDocker();
-    initAi();
+    await initAi();
 
     const server = http.createServer(app);
     initSocket(server);

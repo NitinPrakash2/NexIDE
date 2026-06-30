@@ -46,11 +46,17 @@ const envSchema = z.object({
   GITHUB_PRIVATE_KEY: z.string().optional(),
   GITHUB_WEBHOOK_SECRET: z.string().optional(),
 
-  OPENAI_API_KEY: z.string().optional(),
-  OPENAI_MODEL: z.string().default("gpt-4o-mini"),
-
   GEMINI_API_KEY: z.string().optional(),
   GEMINI_MODEL: z.string().default("gemini-2.0-flash"),
+
+  GROQ_API_KEY: z.string().optional(),
+  GROQ_MODEL: z.string().default("llama-3.3-70b-versatile"),
+
+  OPENROUTER_API_KEY: z.string().optional(),
+  OPENROUTER_MODEL: z.string().default("google/gemini-2.0-flash-lite-preview-02-05"),
+
+  MISTRAL_API_KEY: z.string().optional(),
+  MISTRAL_MODEL: z.string().default("mistral-small-latest"),
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -92,9 +98,15 @@ export const env = Object.freeze({
   GITHUB_PRIVATE_KEY: parsed.data.GITHUB_PRIVATE_KEY,
   GITHUB_WEBHOOK_SECRET: parsed.data.GITHUB_WEBHOOK_SECRET,
 
-  OPENAI_API_KEY: parsed.data.OPENAI_API_KEY,
-  OPENAI_MODEL: parsed.data.OPENAI_MODEL,
-
   GEMINI_API_KEY: parsed.data.GEMINI_API_KEY,
   GEMINI_MODEL: parsed.data.GEMINI_MODEL,
+
+  GROQ_API_KEY: parsed.data.GROQ_API_KEY,
+  GROQ_MODEL: parsed.data.GROQ_MODEL,
+
+  OPENROUTER_API_KEY: parsed.data.OPENROUTER_API_KEY,
+  OPENROUTER_MODEL: parsed.data.OPENROUTER_MODEL,
+
+  MISTRAL_API_KEY: parsed.data.MISTRAL_API_KEY,
+  MISTRAL_MODEL: parsed.data.MISTRAL_MODEL,
 });

@@ -1,5 +1,6 @@
 import { prisma } from "../lib/prisma.js";
 import { AppError } from "../utils/appError.js";
+import { logger } from "../config/index.js";
 import { chatCompletion, chatCompletionStream, aiAvailable } from "../lib/ai.js";
 import { MemberRepository } from "../repositories/memberRepository.js";
 import { buildRagContext, clearProjectIndex } from "../lib/codeIndexer.js";
@@ -106,16 +107,26 @@ export class AiService {
       userMessages.push({ role: "user", content: message });
     }
 
-    const result = await chatCompletion({
-      type,
-      messages: userMessages,
-      code,
-      language,
-      errorMessage,
-      fileContext,
-      ragContext,
-      model: conv.model,
-    });
+    let result;
+    try {
+      result = await chatCompletion({
+        type,
+        messages: userMessages,
+        code,
+        language,
+        errorMessage,
+        fileContext,
+        ragContext,
+        model: conv.model,
+      });
+    } catch (error) {
+      logger.error("All AI providers failed", { error: error.message });
+      result = {
+        content: `AI service is currently unavailable. Please try again later.`,
+        role: "assistant",
+        tokens: 0,
+      };
+    }
 
     await this._saveMessage(conv.id, "user", message || code, 0);
     await this._saveMessage(conv.id, result.role, result.content, result.tokens);

@@ -17,7 +17,7 @@ export const codeActionSchema = z.object({
 export const createConversationSchema = z.object({
   projectId: z.string().uuid().optional(),
   title: z.string().min(1).max(200).optional().default("New conversation"),
-  model: z.string().optional().default("gpt-4o-mini"),
+  model: z.string().optional(),
 });
 
 export const updateConversationSchema = z.object({

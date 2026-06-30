@@ -2,10 +2,6 @@ import OpenAI from "openai";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { env, logger } from "../config/index.js";
 
-let provider = null;
-let providerType = null;
-let isAvailable = false;
-
 const SYSTEM_PROMPTS = {
   default: `You are NexAI, an expert programming assistant integrated into the NexIDE cloud IDE. 
 You help users write, understand, debug, and refactor code. 
@@ -28,42 +24,62 @@ Provide the refactored code and explain each significant change.`,
 Suggest fixes with corrected code. Explain why the error occurred and how the fix resolves it.`,
 };
 
-export function initAi() {
-  const geminiKey = env.GEMINI_API_KEY;
-  const openaiKey = env.OPENAI_API_KEY;
+const providers = [];
 
-  if (geminiKey) {
+function _register(type, client, priority) {
+  providers.push({ type, client, priority });
+  logger.info(`AI provider registered: ${type} (priority ${priority})`);
+}
+
+export async function initAi() {
+  providers.length = 0;
+
+  if (env.GEMINI_API_KEY) {
     try {
-      provider = new GoogleGenerativeAI(geminiKey);
-      providerType = "gemini";
-      isAvailable = true;
-      logger.info("AI provider initialized: Google Gemini");
-      return;
-    } catch (error) {
-      logger.warn("Gemini initialization failed", { error: error.message });
+      _register("gemini", new GoogleGenerativeAI(env.GEMINI_API_KEY), 1);
+    } catch (e) {
+      logger.warn("Gemini init failed", { error: e.message });
     }
   }
 
-  if (openaiKey) {
+  if (env.GROQ_API_KEY) {
     try {
-      provider = new OpenAI({ apiKey: openaiKey });
-      providerType = "openai";
-      isAvailable = true;
-      logger.info("AI provider initialized: OpenAI");
-      return;
-    } catch (error) {
-      logger.warn("OpenAI initialization failed", { error: error.message });
+      const client = new OpenAI({ apiKey: env.GROQ_API_KEY, baseURL: "https://api.groq.com/openai/v1" });
+      _register("groq", client, 2);
+    } catch (e) {
+      logger.warn("Groq init failed", { error: e.message });
     }
   }
 
-  isAvailable = false;
-  provider = null;
-  providerType = null;
-  logger.warn("No AI API key configured (try GEMINI_API_KEY for free tier) — AI features will be unavailable");
+  if (env.OPENROUTER_API_KEY) {
+    try {
+      const client = new OpenAI({ apiKey: env.OPENROUTER_API_KEY, baseURL: "https://openrouter.ai/api/v1" });
+      _register("openrouter", client, 3);
+    } catch (e) {
+      logger.warn("OpenRouter init failed", { error: e.message });
+    }
+  }
+
+  if (env.MISTRAL_API_KEY) {
+    try {
+      const client = new OpenAI({ apiKey: env.MISTRAL_API_KEY, baseURL: "https://api.mistral.ai/v1" });
+      _register("mistral", client, 4);
+    } catch (e) {
+      logger.warn("Mistral init failed", { error: e.message });
+    }
+  }
+
+  if (providers.length === 0) {
+    logger.warn("No AI provider available — AI features will be unavailable");
+  }
 }
 
 export function aiAvailable() {
-  return isAvailable && provider !== null;
+  return providers.length > 0;
+}
+
+export function getProviderList() {
+  return providers.map(p => ({ type: p.type, priority: p.priority }));
 }
 
 function getSystemPrompt(type = "default") {
@@ -122,18 +138,25 @@ function toGeminiHistory(messages) {
   return history;
 }
 
-async function geminiCompletion({ system, messages, model, temperature }) {
-  const genModel = provider.getGenerativeModel({
+function _modelFor(type, model) {
+  const valid = model && !model.includes("gpt") && !model.includes("gpt") && model !== "gpt-4o-mini";
+  if (type === "gemini") return valid ? model : undefined;
+  if (type === "groq") return valid ? model : env.GROQ_MODEL;
+  if (type === "openrouter") return valid ? model : env.OPENROUTER_MODEL;
+  if (type === "mistral") return valid ? model : env.MISTRAL_MODEL;
+  return model;
+}
+
+async function geminiCompletion(client, { system, messages, model, temperature }) {
+  const genModel = client.getGenerativeModel({
     model: model || env.GEMINI_MODEL,
     systemInstruction: system,
     generationConfig: { temperature: temperature ?? 0.7 },
   });
-
   const history = toGeminiHistory(messages);
   const lastMsg = history.pop();
   const chat = genModel.startChat({ history });
   const result = await chat.sendMessage(lastMsg.parts[0].text);
-
   const response = result.response;
   return {
     content: response.text(),
@@ -143,18 +166,16 @@ async function geminiCompletion({ system, messages, model, temperature }) {
   };
 }
 
-async function* geminiStream({ system, messages, model, temperature }) {
-  const genModel = provider.getGenerativeModel({
+async function* geminiStream(client, { system, messages, model, temperature }) {
+  const genModel = client.getGenerativeModel({
     model: model || env.GEMINI_MODEL,
     systemInstruction: system,
     generationConfig: { temperature: temperature ?? 0.7 },
   });
-
   const history = toGeminiHistory(messages);
   const lastMsg = history.pop();
   const chat = genModel.startChat({ history });
   const result = await chat.sendMessageStream(lastMsg.parts[0].text);
-
   let fullContent = "";
   for await (const chunk of result.stream) {
     const text = chunk.text();
@@ -163,67 +184,33 @@ async function* geminiStream({ system, messages, model, temperature }) {
       yield { content: text, done: false };
     }
   }
-
   yield {
-    content: fullContent,
-    done: true,
-    role: "assistant",
-    tokens: 0,
-    model: model || env.GEMINI_MODEL,
+    content: fullContent, done: true, role: "assistant", tokens: 0, model: model || env.GEMINI_MODEL,
   };
 }
 
-export async function chatCompletion({ type = "chat", messages, code, language, errorMessage, fileContext, ragContext, model }) {
-  if (!aiAvailable()) {
-    throw new Error("AI is not available. Configure GEMINI_API_KEY or OPENAI_API_KEY in environment.");
-  }
-
-  const msgs = buildMessages({ type, messages, code, language, errorMessage, fileContext, ragContext });
-  const system = msgs.filter((m) => m.role === "system").map((m) => m.content).join("\n");
-  const chatMessages = msgs.filter((m) => m.role !== "system");
-
-  if (providerType === "gemini") {
-    return geminiCompletion({ system, messages: chatMessages, model, temperature: type === "generate" ? 0.3 : 0.7 });
-  }
-
-  const modelName = model || env.OPENAI_MODEL || "gpt-4o-mini";
-  const response = await provider.chat.completions.create({
-    model: modelName,
-    messages: msgs,
-    temperature: type === "generate" ? 0.3 : 0.7,
+async function openaiCompletion(client, { messages, model, temperature }) {
+  const response = await client.chat.completions.create({
+    model,
+    messages,
+    temperature: temperature ?? 0.7,
   });
-
   const choice = response.choices[0];
   return {
     content: choice.message.content,
     role: "assistant",
     tokens: response.usage?.total_tokens || 0,
-    model: modelName,
+    model,
   };
 }
 
-export async function* chatCompletionStream({ type = "chat", messages, code, language, errorMessage, fileContext, ragContext, model }) {
-  if (!aiAvailable()) {
-    throw new Error("AI is not available. Configure GEMINI_API_KEY or OPENAI_API_KEY in environment.");
-  }
-
-  const msgs = buildMessages({ type, messages, code, language, errorMessage, fileContext, ragContext });
-
-  if (providerType === "gemini") {
-    const system = msgs.filter((m) => m.role === "system").map((m) => m.content).join("\n");
-    const chatMessages = msgs.filter((m) => m.role !== "system");
-    yield* geminiStream({ system, messages: chatMessages, model, temperature: type === "generate" ? 0.3 : 0.7 });
-    return;
-  }
-
-  const modelName = model || env.OPENAI_MODEL || "gpt-4o-mini";
-  const stream = await provider.chat.completions.create({
-    model: modelName,
-    messages: msgs,
-    temperature: type === "generate" ? 0.3 : 0.7,
+async function* openaiStream(client, { messages, model, temperature }) {
+  const stream = await client.chat.completions.create({
+    model,
+    messages,
+    temperature: temperature ?? 0.7,
     stream: true,
   });
-
   let fullContent = "";
   for await (const chunk of stream) {
     const delta = chunk.choices[0]?.delta?.content || "";
@@ -232,12 +219,65 @@ export async function* chatCompletionStream({ type = "chat", messages, code, lan
       yield { content: delta, done: false };
     }
   }
-
   yield {
-    content: fullContent,
-    done: true,
-    role: "assistant",
-    tokens: 0,
-    model: modelName,
+    content: fullContent, done: true, role: "assistant", tokens: 0, model,
   };
+}
+
+function shouldFallback(err) {
+  const msg = (err.message || "").toLowerCase();
+  return msg.includes("429") || msg.includes("quota") || msg.includes("rate limit")
+    || msg.includes("503") || msg.includes("502") || msg.includes("401") || msg.includes("404")
+    || msg.includes("403") || msg.includes("insufficient") || msg.includes("no content")
+    || msg.includes("does not exist") || msg.includes("not found");
+}
+
+export async function chatCompletion({ type = "chat", messages, code, language, errorMessage, fileContext, ragContext, model }) {
+  const msgs = buildMessages({ type, messages, code, language, errorMessage, fileContext, ragContext });
+  const system = msgs.filter((m) => m.role === "system").map((m) => m.content).join("\n");
+  const chatMessages = msgs.filter((m) => m.role !== "system");
+  const temperature = type === "generate" ? 0.3 : 0.7;
+
+  let lastError = null;
+  for (const prov of providers) {
+    const resolvedModel = _modelFor(prov.type, model);
+    try {
+      if (prov.type === "gemini") {
+        return await geminiCompletion(prov.client, { system, messages: chatMessages, model: resolvedModel, temperature });
+      }
+      return await openaiCompletion(prov.client, { messages: msgs, model: resolvedModel, temperature });
+    } catch (error) {
+      lastError = error;
+      logger.warn(`AI "${prov.type}" failed, trying next`, { error: error.message });
+      if (!shouldFallback(error)) throw error;
+    }
+  }
+
+  throw lastError || new Error("All AI providers failed");
+}
+
+export async function* chatCompletionStream({ type = "chat", messages, code, language, errorMessage, fileContext, ragContext, model }) {
+  const msgs = buildMessages({ type, messages, code, language, errorMessage, fileContext, ragContext });
+  const system = msgs.filter((m) => m.role === "system").map((m) => m.content).join("\n");
+  const chatMessages = msgs.filter((m) => m.role !== "system");
+  const temperature = type === "generate" ? 0.3 : 0.7;
+
+  let lastError = null;
+  for (const prov of providers) {
+    const resolvedModel = _modelFor(prov.type, model);
+    try {
+      if (prov.type === "gemini") {
+        yield* geminiStream(prov.client, { system, messages: chatMessages, model: resolvedModel, temperature });
+      } else {
+        yield* openaiStream(prov.client, { messages: msgs, model: resolvedModel, temperature });
+      }
+      return;
+    } catch (error) {
+      lastError = error;
+      logger.warn(`AI stream "${prov.type}" failed, trying next`, { error: error.message });
+      if (!shouldFallback(error)) throw error;
+    }
+  }
+
+  throw lastError || new Error("All AI providers failed");
 }
